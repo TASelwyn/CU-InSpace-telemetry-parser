@@ -27,7 +27,7 @@ class SuperBlock:
         self.version = block[0x09]
         self.continued = not not (block[0x09] & 1)
 
-        self.length = struct.unpack("<I", block[0x0c:0x10])[0]
+        self.partition_length = struct.unpack("<I", block[0x0c:0x10])[0]
 
         self.flights = list()
 
@@ -47,7 +47,7 @@ if __name__ == '__main__':
 
         print(f"Version: {sb.version}")
         print(f"First flight continued from previous partition: {'yes' if sb.continued else 'no'}")
-        print(f"Partition length: {sb.length}")
+        print(f"Partition length: {sb.partition_length}")
         print()
 
         last_block = 0

@@ -49,10 +49,10 @@ def log_gnss_loc(block, outfile, index):
     if index == 0:
         # write header
         outfile.write('Mission Time (ms),Latitude,Longitude,UTC Time,Altitude (m),'
-                      'Speed (knots),Course (°),PDOP,HDOP,VDOP,Sats in Fix,Fix Type\n')
+                      'Speed (knots),Course (degs),PDOP,HDOP,VDOP,Sats in Fix,Fix Type\n')
     d = block.data
-    outfile.write(f"{mt_to_ms(d.mission_time)},{GNSSLocationBlock.coord_to_str(d.latitude)},"
-                  f"{GNSSLocationBlock.coord_to_str(d.longitude)},{d.utc_time},{d.altitude},"
+    outfile.write(f"{mt_to_ms(d.mission_time)},{d.latitude/600000},"
+                  f"{d.longitude/600000},{d.utc_time},{d.altitude},"
                   f"{d.speed},{d.course},{d.pdop},{d.hdop},{d.vdop},{d.sats},{d.fix_type.name}\n")
 
 
@@ -82,8 +82,8 @@ def log_mpu9250(block, outfile, index):
         outfile.write('Mission Time (ms),Accel/Gyro Sample Rate (Hz),Mag Sample Rate (Hz),'
                       'Accel FSR (g),Gyro FSR (deg/s),Accel Bandwidth (Hz),Gyro '
                       'Bandwidth,Accel X (g),Accel Y (g),Accel Z (g),Gyro X (dps),'
-                      'Gyro Y (dps),Gyro Z (dps),Mag X (µT),Mag Y (µT),Mag Z '
-                      '(µT),Mag Overflow,Mag Res (bits),Temperature (°C)\n')
+                      'Gyro Y (dps),Gyro Z (dps),Mag X (uT),Mag Y (uT),Mag Z '
+                      '(uT),Mag Overflow,Mag Res (bits),Temperature (°C)\n')
     d = block.data
     for time, s in block.data.gen_samples():
         outfile.write(f"{time},{d.ag_sample_rate},{d.mag_sample_rate.samples_per_sec},"
@@ -159,7 +159,7 @@ block_handlers = {
     AltitudeDataBlock: (log_altitude, "altitude"),
     GNSSLocationBlock: (log_gnss_loc, "gnss_location"),
     GNSSMetadataBlock: (log_gnss_meta, "gnss_metadata"),
-    KX134AccelerometerDataBlock: (log_kx134, "kx134_accel"),
+    KX134AccelerometerDataBlock: (log_kx134, "kx134_accelerometer"),
     MPU9250IMUDataBlock: (log_mpu9250, "mpu9250_imu"),
     StatusDataBlock: (log_status, "status"),
     AccelerationDataBlock: (log_acceleration, "acceleration"),
@@ -208,7 +208,7 @@ def parse_flight(file, outdir, part_offset, flight_num, flight):
     telem_mission_file = os.path.join(flightdir, "telemetry.mission")
 
     # Open output files for writing
-    outfiles = dict((k, open(os.path.join(flightdir, v[1]), "w")) for (k, v) in
+    outfiles = dict((k, open(os.path.join(flightdir, f"{v[1]}.csv"), "w")) for (k, v) in
                     block_handlers.items() if v[1] is not None)
 
     # Read blocks and record data
@@ -312,17 +312,21 @@ with open(infile, 'rb') as f:
     except FileExistsError:
         exit("Output dir already exists.")
 
+    # Partition Length
+    print(f"Partition length: {sb.partition_length}")
+
     # Parse flights
-
-    print(sb.length)
-
     for i, flight in enumerate(sb.flights):
-        print(i, flight, "AHHHHHHHH")
+        # Empty flight
         if flight.num_blocks == 0:
             if i == 0:
                 print("No flights.")
             break
 
+        print(i, flight.timestamp, flight.first_block, flight.num_blocks)
+
         # ONLY PARSE FIRST FLIGHT
-        if i == 1:
-            parse_flight(f, outdir, superblock_addr, i, flight)
+        if i != 0:
+            break
+
+        parse_flight(f, outdir, superblock_addr, i, flight)
