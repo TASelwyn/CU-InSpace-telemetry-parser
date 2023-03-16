@@ -1,5 +1,5 @@
 #! /usr/bin/env python3
-
+import os
 import struct
 import datetime
 import sys
@@ -21,8 +21,8 @@ class SuperBlock:
         if len(block) != 512:
             raise ValueError("Invalid Superblock")
 
-        #if block[0x0:0x8] != SuperBlock.MAGIC or block[0x1f8:0x200] != SuperBlock.MAGIC:
-        #    raise ValueError("Invalid Superblock")
+        if block[0x0:0x8] != SuperBlock.MAGIC or block[0x1f8:0x200] != SuperBlock.MAGIC:
+            raise ValueError("Invalid Superblock")
 
         self.version = block[0x09]
         self.continued = not not (block[0x09] & 1)
@@ -42,7 +42,16 @@ if __name__ == '__main__':
         # No arguments
         exit(0)
 
+    # File size
+    file_size = os.stat(sys.argv[1]).st_size
+
     with open(sys.argv[1], "rb") as f:
+
+        # Skip MBR and the rest of first sector to get to superblock
+        # (512 bytes is just MBR, anything larger should be a full flight and blocks)
+        if file_size > 512:
+            f.seek(512 * 2048)
+
         sb = SuperBlock(f.read(512))
 
         print(f"Version: {sb.version}")
