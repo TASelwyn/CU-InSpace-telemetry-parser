@@ -70,7 +70,7 @@ def log_kx134(block, outfile, index):
                       'Resolution (bits),X (g),Y (g),Z (g)\n')
     d = block.data
     for time, x, y, z in block.data.gen_samples():
-        outfile.write(f"{time},{d.odr.samples_per_sec}\t±{d.accel_range.acceleration},"
+        outfile.write(f"{time},{d.odr.samples_per_sec},{d.accel_range.acceleration},"
                       f"{'9' if d.rolloff == KX134LPFRolloff.ODR_OVER_9 else '2'},"
                       f"{d.resolution.bits},{x},{y},{z}\n")
 
@@ -283,6 +283,7 @@ infile = sys.argv[1]
 # Read input file
 with open(infile, 'rb') as f:
     # Read MBR
+    superblock_addr = None
     try:
         mbr = MBR(f.read(512))
     except ValueError as e:
@@ -290,14 +291,13 @@ with open(infile, 'rb') as f:
         superblock_addr = 0
     else:
         # Look for a valid partition
-        part = None
-        for p in mbr.partitions:
-            if p.type == 0x89:
-                part = p
+        for part in mbr.partitions:
+            if part.type == 0x89:
+                superblock_addr = part.first_sector_lba
                 break
-        if part is None:
-            exit("No CUInSpace partition found in mbr.")
-        superblock_addr = part.first_sector_lba
+
+        if superblock_addr is None:
+            exit("No CUInSpace partition found in MBR.")
 
     # Parse superblock
     f.seek(superblock_addr * 512)

@@ -13,6 +13,9 @@ class Flight:
         self.time = datetime.datetime.fromtimestamp(parts[2], datetime.timezone.utc)
         self.timestamp = parts[2]
 
+    def to_bytes(self):
+        return struct.pack("<III", self.first_block, self.num_blocks, self.timestamp)
+
 
 class SuperBlock:
     MAGIC = b'CUInSpac'
@@ -49,8 +52,8 @@ if __name__ == '__main__':
 
         # Skip MBR and the rest of first sector to get to superblock
         # (512 bytes is just MBR, anything larger should be a full flight and blocks)
-        if file_size > 512:
-            f.seek(512 * 2048)
+        #if file_size > 512:
+            #f.seek(512 * 2048)
 
         sb = SuperBlock(f.read(512))
 
