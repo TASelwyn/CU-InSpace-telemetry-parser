@@ -3,9 +3,11 @@ import datetime
 import os
 import sys
 from collections import Counter
+from pathlib import Path
+from io import BufferedReader
 
 from mbr import MBR
-from superblock import SuperBlock
+from superblock import SuperBlock, Flight
 from sd_block import *
 from data_block import *
 
@@ -51,8 +53,8 @@ def log_gnss_loc(block, outfile, index):
         outfile.write('Mission Time (ms),Latitude,Longitude,UTC Time,Altitude (m),'
                       'Speed (knots),Course (degs),PDOP,HDOP,VDOP,Sats in Fix,Fix Type\n')
     d = block.data
-    outfile.write(f"{mt_to_ms(d.mission_time)},{d.latitude/600000},"
-                  f"{d.longitude/600000},{d.utc_time},{d.altitude},"
+    outfile.write(f"{mt_to_ms(d.mission_time)},{d.latitude / 600000},"
+                  f"{d.longitude / 600000},{d.utc_time},{d.altitude},"
                   f"{d.speed},{d.course},{d.pdop},{d.hdop},{d.vdop},{d.sats},{d.fix_type.name}\n")
 
 
@@ -124,30 +126,24 @@ def log_angular_velocity(block, outfile, index):
     outfile.write(f"{mt_to_ms(d.mission_time)},{d.fsr},{d.x},{d.y},{d.z}\n")
 
 
-def log_telemetry_mission(rawblock, file, index, flight=None):
-    """ TELEMETRY MISSION """
+def create_telemetry_mission(file: BufferedReader, mission_file: Path, flight_list: Flight = None):
+    """ CONSTRUCT TELEMETRY MISSION FILE FROM SD CARD IMAGE """
 
-    with open(file, "a") as outfile:
-        if index == 0:
-            # write header
-            if flight is not None:
-                # = datetime.datetime.strptime("2022-11-14 14:01:18+00:00", "%Y-%M-%D %H:%M:%")
-                outfile.write(f'{0},{flight.timestamp}\n')
-                print(0, flight.timestamp)
+    if flight_list is None:
+        print("No flights to put into telemetry mission file.")
+        # = datetime.datetime.strptime("2022-11-14 14:01:18+00:00", "%Y-%M-%D %H:%M:%")
+        #outfile.write(f'{0},{flight.timestamp}\n')
+        print(0, flight.timestamp)
 
-        block_head = struct.unpack("<HH", rawblock[0:4])
-        block_type = block_head[0] >> 6
-        # block_length = block_head[1]
+    # NEVER LOGS TELEMETRY TYPE. JUST SUBTYPE IN ITS PLACE. ? ? ?
+    #datablock_subtype = block_type
+    # THEREFORE ASSUMING ITS ALWAYS A DATA PACKET {Not CONTROL OR COMMAND}
 
-        # NEVER LOGS TELEMETRY TYPE. JUST SUBTYPE IN ITS PLACE. ? ? ?
-        datablock_subtype = block_type
-        # THEREFORE ASSUMING ITS ALWAYS A DATA PACKET {Not CONTROL OR COMMAND}
-
-        payload = rawblock[4:]
-        msg_to_write = f"{','.join([str('2'), str(datablock_subtype), payload.hex()])}\n"
-        #print(msg_to_write)
-        outfile.write(msg_to_write)
-        outfile.close()
+    #payload = rawblock[4:]
+    #msg_to_write = f"{','.join([str('2'), str(datablock_subtype), payload.hex()])}\n"
+    # print(msg_to_write)
+    #outfile.write(msg_to_write)
+    #outfile.close()
 
 
 block_handlers = {
@@ -179,7 +175,7 @@ def gen_blocks(file, first_block, num_blocks):
 
         except SDBlockException:
             # END OF FILE EXCEPTION
-            #print(count, ((num_blocks * 512) - 4), block_length, num_blocks*512)
+            # print(count, ((num_blocks * 512) - 4), block_length, num_blocks*512)
             return
 
         count = count + block_length
@@ -205,8 +201,6 @@ def parse_flight(file, outdir, part_offset, flight_num, flight):
     except FileExistsError:
         pass
 
-    telem_mission_file = os.path.join(flightdir, "telemetry.mission")
-
     # Open output files for writing
     outfiles = dict((k, open(os.path.join(flightdir, f"{v[1]}.csv"), "w")) for (k, v) in
                     block_handlers.items() if v[1] is not None)
@@ -219,9 +213,7 @@ def parse_flight(file, outdir, part_offset, flight_num, flight):
     first_time = None
     last_time = None
 
-
     file.seek((part_offset + flight.first_block) * 512)
-
 
     for block, rawblock in gen_blocks(file, flight.first_block, flight.num_blocks):
         num_blocks += 1
@@ -236,11 +228,10 @@ def parse_flight(file, outdir, part_offset, flight_num, flight):
             last_time = mt_to_ms(block.data.mission_time)
 
             # TELEM MISSION DATA FILE
-            index = block_type_counts["telemetry"]
-            block_type_counts["telemetry"] = index + 1
+            # index = block_type_counts["telemetry"]
+            # block_type_counts["telemetry"] = index + 1
 
-
-            log_telemetry_mission(rawblock, telem_mission_file, index, flight)
+            # log_telemetry_mission(rawblock, telem_mission_file, index, flight)
 
         # Increment count for block type
         block_type = (type(block), cls)
@@ -274,10 +265,10 @@ if len(sys.argv) < 2:
     # No arguments
     exit(0)
 
-outdir = "./out"
 infile = sys.argv[1]
-
 # Create output directory
+outdir = Path.cwd().joinpath("out")
+outdir.mkdir(parents=True, exist_ok=True)
 
 
 # Read input file
@@ -308,9 +299,10 @@ with open(infile, 'rb') as f:
 
     # Create output directory
     try:
-        os.mkdir(outdir)
+        outdir = outdir.joinpath(infile)
+        outdir.mkdir(parents=True, exist_ok=False)
     except FileExistsError:
-        exit("Output dir already exists.")
+        exit(f"Output dir for {infile} already exists.")
 
     # Partition Length
     print(f"Partition length: {sb.partition_length}")
@@ -320,13 +312,15 @@ with open(infile, 'rb') as f:
         # Empty flight
         if flight.num_blocks == 0:
             if i == 0:
-                print("No flights.")
+                exit("No flights.")
             break
 
-        print(i, flight.timestamp, flight.first_block, flight.num_blocks)
-
+        print(f"Flight {i} -> start: {flight.first_block}, length: {flight.num_blocks}, time: {flight.timestamp}")
         # ONLY PARSE FIRST FLIGHT
         if i != 0:
             break
+        telemetry_file = Path.cwd().joinpath("missions")
+        telemetry_file.mkdir(parents=True, exist_ok=True)
 
+        #create_telemetry_mission(f, telemetry_file, sb.flights)
         parse_flight(f, outdir, superblock_addr, i, flight)

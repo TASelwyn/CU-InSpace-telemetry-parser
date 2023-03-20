@@ -49,12 +49,11 @@ if __name__ == '__main__':
     file_size = os.stat(sys.argv[1]).st_size
 
     with open(sys.argv[1], "rb") as f:
-
         # Skip MBR and the rest of first sector to get to superblock
-        # (512 bytes is just MBR, anything larger should be a full flight and blocks)
-        #if file_size > 512:
-            #f.seek(512 * 2048)
-
+        # (512 bytes is just superblock, anything larger should be the full sd card image)
+        # This does NOT work on .cuinspace mission file as the first block is a superblock
+        if file_size > 512:
+            f.seek(512 * 2048)
         sb = SuperBlock(f.read(512))
 
         print(f"Version: {sb.version}")
@@ -62,12 +61,11 @@ if __name__ == '__main__':
         print(f"Partition length: {sb.partition_length}")
         print()
 
-        last_block = 0
+        flight_blocks = 0
         for i, flight in enumerate(sb.flights):
             print(f"Flight {i} -> start: {flight.first_block}, length: {flight.num_blocks}, time: {flight.timestamp}")
             if flight.num_blocks != 0:
-                last_block = flight.first_block + flight.num_blocks
-
+                flight_blocks = flight.first_block + flight.num_blocks
         print()
-        print(f"Last block: {last_block}")
-        print(f"To copy full SD card image, use:    dd if=[disk] of=full bs=512 count={last_block + 2049}")
+        print(f"Last block: {flight_blocks}")
+        print(f"To copy full SD card image, use:    dd if=[disk] of=full bs=512 count={flight_blocks + 2049}")
