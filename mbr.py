@@ -32,4 +32,4 @@ class MBR:
             partition = MBRPartition(part_entry)
             if partition.valid:
                 self.partitions.append(partition)
-                print(f"PARTITION: {partition.type} {partition.valid} {partition.first_sector_lba} {partition.num_sectors}")
+                #print(f"PARTITION: {partition.type} {partition.valid} {partition.first_sector_lba} {partition.num_sectors}")

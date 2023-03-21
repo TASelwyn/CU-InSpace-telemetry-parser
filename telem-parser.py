@@ -60,8 +60,19 @@ def log_gnss_loc(block, outfile, index):
 
 def log_gnss_meta(block, outfile, index):
     """ GNSSMetadataBlock """
-    outfile.write(str(block))
-    outfile.write("\n")
+    if index == 0:
+        # write header
+        outfile.write('Mission Time (ms),GPS sats in use,GLONASS sats in use, Sats in view\n')
+    d = block.data
+
+    # Alternative sats_in_view output
+    sat_string = ""
+    for sat in d.sats_in_view:
+        sat_string += ' '.join(str(item) for item in list(dict(sat).values())) + " "
+
+    outfile.write(f"{mt_to_ms(d.mission_time)},[{' '.join(str(sat) for sat in d.gps_sats_in_use)}],"
+                  f"[{' '.join(str(sat) for sat in d.glonass_sats_in_use)}],"
+                  f"[{' '.join(str(dict(sat)['id']) for sat in d.sats_in_view)}]\n")
 
 
 def log_kx134(block, outfile, index):
@@ -126,24 +137,37 @@ def log_angular_velocity(block, outfile, index):
     outfile.write(f"{mt_to_ms(d.mission_time)},{d.fsr},{d.x},{d.y},{d.z}\n")
 
 
-def create_telemetry_mission(file: BufferedReader, mission_file: Path, flight_list: Flight = None):
-    """ CONSTRUCT TELEMETRY MISSION FILE FROM SD CARD IMAGE """
+def create_telemetry_mission(file: BufferedReader, mission_filename: str, superblock: SuperBlock, superblock_addr, flights_selected: list):
+    """ CONSTRUCT TELEMETRY MISSION FILE FROM SD CARD IMAGE FILE """
+    """ FIRST BLOCK IS A SUPERBLOCK, FOLLOWED BY SD DATA BLOCKS """
 
-    if flight_list is None:
-        print("No flights to put into telemetry mission file.")
-        # = datetime.datetime.strptime("2022-11-14 14:01:18+00:00", "%Y-%M-%D %H:%M:%")
-        #outfile.write(f'{0},{flight.timestamp}\n')
-        print(0, flight.timestamp)
+    MISSION_EXTENSION = "cuinspace"
+    missions_dir = Path.cwd().joinpath("missions")
+    missions_dir.mkdir(parents=True, exist_ok=True)
 
-    # NEVER LOGS TELEMETRY TYPE. JUST SUBTYPE IN ITS PLACE. ? ? ?
-    #datablock_subtype = block_type
-    # THEREFORE ASSUMING ITS ALWAYS A DATA PACKET {Not CONTROL OR COMMAND}
+    output_file_path = missions_dir.joinpath(f"{mission_filename}.{MISSION_EXTENSION}TEST")
 
-    #payload = rawblock[4:]
-    #msg_to_write = f"{','.join([str('2'), str(datablock_subtype), payload.hex()])}\n"
-    # print(msg_to_write)
-    #outfile.write(msg_to_write)
-    #outfile.close()
+    mission_flights = list()
+    for i, flight in enumerate(superblock.flights):
+        if int(i) in flights_selected:
+            mission_flights.append(flight)
+            print(f"Flight {i} -> start: {flight.first_block}, length: {flight.num_blocks}, time: {flight.timestamp}")
+
+
+    # Outputs the superblock for the new telemetry mission file
+    # TODO Sanitize superblock to be only the flights selected and zero the flights
+    # TODO Add the output blocks to the end of output
+    with open(output_file_path, "wb") as outfile:
+        file.seek(superblock_addr * 512)
+        superblock_data = file.read(512)
+        outfile.write(superblock_data)
+        print(type(superblock_data), superblock_data)
+        try:
+            sb = SuperBlock(superblock_data)
+            print("PARSED SUPERBLOCK FROM FILE")
+            sb.output()
+        except ValueError:
+            exit("Could not parse superblock.")
 
 
 block_handlers = {
@@ -189,17 +213,18 @@ def gen_blocks(file, first_block, num_blocks):
         yield SDBlock.from_bytes(block), block
 
 
-def parse_flight(file, outdir, part_offset, flight_num, flight):
-    print(f"##### Flight {flight_num} #####")
+def parse_flight(file, imagedir: Path, part_offset, flight_num, flight):
+    print(f"############### Flight {flight_num} ###############")
     print(f"Starts at block: {flight.first_block}, {flight.num_blocks} "
           f"block{'s' if flight.num_blocks != 1 else ''} long, time: {flight.timestamp}")
 
-    # Create flight directory
-    flightdir = os.path.join(outdir, f"flight_{flight_num}")
+    # Create flight
+    flightdir = imagedir.joinpath(f"flight_{flight_num}")
     try:
-        os.mkdir(flightdir)
+        flightdir.mkdir(parents=True, exist_ok=False)
     except FileExistsError:
-        pass
+        print(f"Flight {i} has already been parsed. Not parsing again.")
+        return
 
     # Open output files for writing
     outfiles = dict((k, open(os.path.join(flightdir, f"{v[1]}.csv"), "w")) for (k, v) in
@@ -227,11 +252,6 @@ def parse_flight(file, outdir, part_offset, flight_num, flight):
 
             last_time = mt_to_ms(block.data.mission_time)
 
-            # TELEM MISSION DATA FILE
-            # index = block_type_counts["telemetry"]
-            # block_type_counts["telemetry"] = index + 1
-
-            # log_telemetry_mission(rawblock, telem_mission_file, index, flight)
 
         # Increment count for block type
         block_type = (type(block), cls)
@@ -270,13 +290,15 @@ infile = sys.argv[1]
 outdir = Path.cwd().joinpath("out")
 outdir.mkdir(parents=True, exist_ok=True)
 
+image_directory = outdir.joinpath(infile)
+image_directory.mkdir(parents=True, exist_ok=True)
 
 # Read input file
-with open(infile, 'rb') as f:
+with open(infile, "rb") as file:
     # Read MBR
     superblock_addr = None
     try:
-        mbr = MBR(f.read(512))
+        mbr = MBR(file.read(512))
     except ValueError as e:
         print("No valid MBR found, assuming that first block is superblock.")
         superblock_addr = 0
@@ -291,36 +313,48 @@ with open(infile, 'rb') as f:
             exit("No CUInSpace partition found in MBR.")
 
     # Parse superblock
-    f.seek(superblock_addr * 512)
+    file.seek(superblock_addr * 512)
     try:
-        sb = SuperBlock(f.read(512))
+        sb = SuperBlock(file.read(512))
     except ValueError:
         exit("Could not parse superblock.")
 
-    # Create output directory
-    try:
-        outdir = outdir.joinpath(infile)
-        outdir.mkdir(parents=True, exist_ok=False)
-    except FileExistsError:
-        exit(f"Output dir for {infile} already exists.")
+    # Output superblock
+    sb.output()
 
-    # Partition Length
-    print(f"Partition length: {sb.partition_length}")
+    cmd = 0
+    flights_selected = list(range(len(sb.flights)))
 
-    # Parse flights
-    for i, flight in enumerate(sb.flights):
-        # Empty flight
-        if flight.num_blocks == 0:
-            if i == 0:
-                exit("No flights.")
-            break
+    while cmd != 4:
+        print(f"Telemetry Parser commands                 Selected [{','.join(str(num) for num in flights_selected)}]\n"
+              "1) Select flights\n"
+              "2) Generate .cuinspace mission file\n"
+              "3) Parse telemetry into CSV files\n"
+              "4) Exit")
+        cmd = int(input("What would you like to do? ").strip())
 
-        print(f"Flight {i} -> start: {flight.first_block}, length: {flight.num_blocks}, time: {flight.timestamp}")
-        # ONLY PARSE FIRST FLIGHT
-        if i != 0:
-            break
-        telemetry_file = Path.cwd().joinpath("missions")
-        telemetry_file.mkdir(parents=True, exist_ok=True)
-
-        #create_telemetry_mission(f, telemetry_file, sb.flights)
-        parse_flight(f, outdir, superblock_addr, i, flight)
+        match cmd:
+            case 1:
+                # Select certain flights to generate mission file from or parse into csv
+                flights_selected = input("Flights to select (CSVs): ").strip().split(",")
+                flights_selected = [] if flights_selected == [""] else [int(num) for num in flights_selected if int(num) in range(len(sb.flights))]
+                flights_selected.sort()
+            case 2:
+                # Generate cuinspace mission file
+                if len(flights_selected) == 0:
+                    print("No flights selected. Please select at least one flight.")
+                else:
+                    mission_name = input("Mission name: ").strip()
+                    create_telemetry_mission(file, mission_name, sb, superblock_addr, flights_selected)
+            case 3:
+                # Parse telemetry to CSV Files
+                if len(flights_selected) == 0:
+                    # Empty flights list
+                    print("No flights selected. Please select at least one flight.")
+                else:
+                    # Parse each selected flight
+                    for i, flight in enumerate(sb.flights):
+                        if int(i) in flights_selected:
+                            parse_flight(file, image_directory, superblock_addr, i, flight)
+                    print("########################################")
+                    print(f"Successfully parsed flights selected [{','.join(str(num) for num in flights_selected)}]\n")
