@@ -12,6 +12,8 @@ from sd_block import *
 from data_block import *
 
 
+MISSION_EXTENSION = "cuinspace"
+
 def mt_to_ms(mt):
     """ Convert mission time to milliseconds """
     return mt * (1000 / 1024)
@@ -137,37 +139,59 @@ def log_angular_velocity(block, outfile, index):
     outfile.write(f"{mt_to_ms(d.mission_time)},{d.fsr},{d.x},{d.y},{d.z}\n")
 
 
-def create_telemetry_mission(file: BufferedReader, mission_filename: str, superblock: SuperBlock, superblock_addr, flights_selected: list):
+def sanitize_superblock(superblock, flights_to_keep: list[Flight]):
+    """ Sanitizes the superblock by shifting flights and only keeping specified flights for telemetry mission """
+    flight_blocks_stored = 1
+    # Loop over every flight spot
+    for i in range(32):
+        # Location of flight struct in superblock
+        flight_start = 0x60 + (12 * i)
+
+        # Zero out unused flight data holders
+        if len(flights_to_keep) == 0:
+            superblock[flight_start:flight_start + 12] = b'\x00'*12
+            break
+
+        # Shift flight block numbering to properly match
+        flight = flights_to_keep[0]
+        flight.first_block = flight_blocks_stored
+        flight_blocks_stored += flight.num_blocks
+
+        # Output adjusted flight to superblock
+        superblock[flight_start:flight_start + 12] = flight.to_bytes()
+
+        # Remove flight shifted
+        flights_to_keep.pop(0)
+    return superblock
+
+
+def create_telemetry_mission(file: BufferedReader, mission_filename: str, superblock_addr: int,
+                             flights_list: list[Flight]):
     """ CONSTRUCT TELEMETRY MISSION FILE FROM SD CARD IMAGE FILE """
     """ FIRST BLOCK IS A SUPERBLOCK, FOLLOWED BY SD DATA BLOCKS """
 
-    MISSION_EXTENSION = "cuinspace"
     missions_dir = Path.cwd().joinpath("missions")
     missions_dir.mkdir(parents=True, exist_ok=True)
+    output_file_path = missions_dir.joinpath(f"{mission_filename}.{MISSION_EXTENSION}")
 
-    output_file_path = missions_dir.joinpath(f"{mission_filename}.{MISSION_EXTENSION}TEST")
-
-    mission_flights = list()
-    for i, flight in enumerate(superblock.flights):
-        if int(i) in flights_selected:
-            mission_flights.append(flight)
-            print(f"Flight {i} -> start: {flight.first_block}, length: {flight.num_blocks}, time: {flight.timestamp}")
-
-
-    # Outputs the superblock for the new telemetry mission file
-    # TODO Sanitize superblock to be only the flights selected and zero the flights
-    # TODO Add the output blocks to the end of output
+    # Generates the new telemetry mission file
     with open(output_file_path, "wb") as outfile:
+        # Sanitize superblock
         file.seek(superblock_addr * 512)
-        superblock_data = file.read(512)
-        outfile.write(superblock_data)
-        print(type(superblock_data), superblock_data)
-        try:
-            sb = SuperBlock(superblock_data)
-            print("PARSED SUPERBLOCK FROM FILE")
-            sb.output()
-        except ValueError:
-            exit("Could not parse superblock.")
+        new_sb = sanitize_superblock(bytearray(file.read(512)), flights_list.copy())
+        outfile.write(new_sb)
+
+        # Show user the new flight details
+        print("NEW TELEMETRY FLIGHT DETAILS")
+        SuperBlock(new_sb).output()
+
+        # Output corresponding flight blocks to output file
+        for flight_to_copy in flights_list:
+            file.seek((superblock_addr + flight_to_copy.first_block) * 512)
+
+            # Copy each block to new file
+            for i in range(flight_to_copy.num_blocks):
+                outfile.write(file.read(512))
 
 
 block_handlers = {
@@ -251,7 +275,6 @@ def parse_flight(file, imagedir: Path, part_offset, flight_num, flight):
                 first_time = mt_to_ms(block.data.mission_time)
 
             last_time = mt_to_ms(block.data.mission_time)
-
 
         # Increment count for block type
         block_type = (type(block), cls)
@@ -337,7 +360,8 @@ with open(infile, "rb") as file:
             case 1:
                 # Select certain flights to generate mission file from or parse into csv
                 flights_selected = input("Flights to select (CSVs): ").strip().split(",")
-                flights_selected = [] if flights_selected == [""] else [int(num) for num in flights_selected if int(num) in range(len(sb.flights))]
+                flights_selected = [] if flights_selected == [""] else [int(num) for num in flights_selected if
+                                                                        int(num) in range(len(sb.flights))]
                 flights_selected.sort()
             case 2:
                 # Generate cuinspace mission file
@@ -345,7 +369,15 @@ with open(infile, "rb") as file:
                     print("No flights selected. Please select at least one flight.")
                 else:
                     mission_name = input("Mission name: ").strip()
-                    create_telemetry_mission(file, mission_name, sb, superblock_addr, flights_selected)
+                    mission_flights = list()
+                    print("##### FLIGHTS TO KEEP #####")
+                    for num in flights_selected:
+                        flight = sb.flights[num]
+                        mission_flights.append(flight)
+                        print(f"Flight {num} -> start: {flight.first_block}, length: {flight.num_blocks}, time: {flight.timestamp}")
+                    print("###########################")
+
+                    create_telemetry_mission(file, mission_name, superblock_addr, mission_flights)
             case 3:
                 # Parse telemetry to CSV Files
                 if len(flights_selected) == 0:
