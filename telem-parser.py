@@ -57,7 +57,7 @@ def log_gnss_loc(block, outfile, index):
     d = block.data
     outfile.write(f"{mt_to_ms(d.mission_time)},{d.latitude / 600000},"
                   f"{d.longitude / 600000},{d.utc_time},{d.altitude},"
-                  f"{d.speed},{d.course},{d.pdop},{d.hdop},{d.vdop},{d.sats},{d.fix_type.name}\n")
+                  f"{d.speed},{d.course},{d.pdop},{d.hdop},{d.vdop},{d.sats},{d.fix_type}\n")
 
 
 def log_gnss_meta(block, outfile, index):
@@ -68,13 +68,13 @@ def log_gnss_meta(block, outfile, index):
     d = block.data
 
     # Alternative sats_in_view output
-    sat_string = ""
-    for sat in d.sats_in_view:
-        sat_string += ' '.join(str(item) for item in list(dict(sat).values())) + " "
+    # sat_string = ""
+    # for sat in d.sats_in_view:
+    #     sat_string += ' '.join(str(item) for item in list(dict(sat).values())) + " "
 
-    outfile.write(f"{mt_to_ms(d.mission_time)},[{' '.join(str(sat) for sat in d.gps_sats_in_use)}],"
-                  f"[{' '.join(str(sat) for sat in d.glonass_sats_in_use)}],"
-                  f"[{' '.join(str(dict(sat)['id']) for sat in d.sats_in_view)}]\n")
+    outfile.write(f"{mt_to_ms(d.mission_time)},[{' '.join(str(num) for num in d.gps_sats_in_use)}],"
+                  f"[{' '.join(str(num) for num in d.glonass_sats_in_use)}],"
+                  f"[{' '.join(str(sat.identifier) for sat in d.sats_in_view)}]\n")
 
 
 def log_kx134(block, outfile, index):
@@ -98,7 +98,7 @@ def log_mpu9250(block, outfile, index):
                       'Accel FSR (g),Gyro FSR (deg/s),Accel Bandwidth (Hz),Gyro '
                       'Bandwidth,Accel X (g),Accel Y (g),Accel Z (g),Gyro X (dps),'
                       'Gyro Y (dps),Gyro Z (dps),Mag X (uT),Mag Y (uT),Mag Z '
-                      '(uT),Mag Overflow,Mag Res (bits),Temperature (°C)\n')
+                      '(uT),Mag Overflow,Mag Res (bits),Temperature (C)\n')
     d = block.data
     for time, s in block.data.gen_samples():
         outfile.write(f"{time},{d.ag_sample_rate},{d.mag_sample_rate.samples_per_sec},"
@@ -112,7 +112,7 @@ def log_status(block, outfile, index):
     """ StatusDataBlock """
     if index == 0:
         # write header
-        outfile.write('Mission Time (ms),KX134 State,Altimeter State,IMU State'
+        outfile.write('Mission Time (ms),KX134 State,Altimeter State,IMU State,'
                       'SD Card Driver State,Deployment State,SD Blocks Recorded,'
                       'SD Checkouts Missed\n')
     d = block.data
