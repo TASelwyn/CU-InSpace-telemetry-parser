@@ -31,8 +31,8 @@ class SuperBlock:
         if block[0x0:0x8] != SuperBlock.MAGIC or block[0x1f8:0x200] != SuperBlock.MAGIC:
             raise ValueError("Invalid Superblock")
 
-        self.version = block[0x09]
-        self.continued = not not (block[0x09] & 1)
+        self.version = int.from_bytes(block[0x08:0x09], "little")
+        self.continued = not not int.from_bytes(block[0x09:0x0A], "little") & (1 << 7)
 
         self.partition_length = struct.unpack("<I", block[0x0c:0x10])[0]
 
@@ -46,6 +46,22 @@ class SuperBlock:
                 break
             self.flights.append(flight_obj)
             self.flight_blocks += flight_obj.num_blocks
+
+    def to_bytes(self) -> bytearray:
+        """ Returns the SuperBlock data object in bytes """
+        block: bytearray = bytearray(b'\x00' * 512)
+        block[0x0:0x8] = SuperBlock.MAGIC
+
+        block[0x08:0x09] = int(self.version).to_bytes(1, "little")
+        block[0x09:0x0A] = int(self.continued << 7).to_bytes(1, "little")
+        block[0xC:0x10] = struct.pack("<I", self.partition_length)
+
+        for i in range(len(self.flights)):
+            flight_start = 0x60 + (12 * i)
+            block[flight_start:flight_start + 12] = self.flights[i].to_bytes()
+
+        block[0x1f8:0x200] = SuperBlock.MAGIC
+        return block
 
     def output(self, output_dd_cmd: bool = False):
         print(f"Logging Version: {self.version}")
@@ -76,8 +92,8 @@ if __name__ == '__main__':
     with open(infile, "rb") as f:
         # Skip MBR and the rest of first sector to get to superblock
         # (512 bytes is just superblock, anything larger should be the full sd card image)
-        # If it's a .cuinspace telemetry file, first block is a superblock so don't skip.
-        if ".cuinspace" not in infile and file_size > 512:
+        # If it's a .mission telemetry file, first block is a superblock so don't skip.
+        if ".mission" not in infile and file_size > 512:
             f.seek(512 * 2048)
         sb = SuperBlock(f.read(512))
 
