@@ -4,15 +4,15 @@ import os
 import sys
 from collections import Counter
 from pathlib import Path
-from io import BufferedReader
+from typing import BinaryIO
 
 from mbr import MBR
 from superblock import SuperBlock, Flight
 from sd_block import *
 from data_block import *
 
+MISSION_EXTENSION = "mission"
 
-MISSION_EXTENSION = "cuinspace"
 
 def mt_to_ms(mt):
     """ Convert mission time to milliseconds """
@@ -139,7 +139,7 @@ def log_angular_velocity(block, outfile, index):
     outfile.write(f"{mt_to_ms(d.mission_time)},{d.fsr},{d.x},{d.y},{d.z}\n")
 
 
-def sanitize_superblock(superblock, flights_to_keep: list[Flight]):
+def sanitize_superblock(superblock: bytearray, flights_to_keep: list[Flight]):
     """ Sanitizes the superblock by shifting flights and only keeping specified flights for telemetry mission """
     flight_blocks_stored = 1
     # Loop over every flight spot
@@ -149,8 +149,8 @@ def sanitize_superblock(superblock, flights_to_keep: list[Flight]):
 
         # Zero out unused flight data holders
         if len(flights_to_keep) == 0:
-            superblock[flight_start:flight_start + 12] = b'\x00'*12
-            break
+            superblock[flight_start:flight_start + 12] = b'\x00' * 12
+            continue
 
         # Shift flight block numbering to properly match
         flight = flights_to_keep[0]
@@ -165,7 +165,7 @@ def sanitize_superblock(superblock, flights_to_keep: list[Flight]):
     return superblock
 
 
-def create_telemetry_mission(file: BufferedReader, mission_filename: str, superblock_addr: int,
+def create_telemetry_mission(file: BinaryIO, mission_filename: str, superblock_addr: int,
                              flights_list: list[Flight]):
     """ CONSTRUCT TELEMETRY MISSION FILE FROM SD CARD IMAGE FILE """
     """ FIRST BLOCK IS A SUPERBLOCK, FOLLOWED BY SD DATA BLOCKS """
