@@ -338,7 +338,7 @@ with open(infile, "rb") as file:
     # Parse superblock
     file.seek(superblock_addr * 512)
     try:
-        sb = SuperBlock(file.read(512))
+        sb = SuperBlock.from_bytes(file.read(512))
     except ValueError:
         exit("Could not parse superblock.")
 
@@ -351,7 +351,7 @@ with open(infile, "rb") as file:
     while cmd != 4:
         print(f"Telemetry Parser commands                 Selected [{','.join(str(num) for num in flights_selected)}]\n"
               "1) Select flights\n"
-              "2) Generate .cuinspace mission file\n"
+              "2) Generate cuinspace mission file\n"
               "3) Parse telemetry into CSV files\n"
               "4) Exit")
         cmd = int(input("What would you like to do? ").strip())
