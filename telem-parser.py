@@ -183,7 +183,7 @@ def create_telemetry_mission(file: BinaryIO, mission_filename: str, superblock_a
 
         # Show user the new flight details
         print("NEW TELEMETRY FLIGHT DETAILS")
-        SuperBlock(new_sb).output()
+        SuperBlock.from_bytes(new_sb).output()
 
         # Output corresponding flight blocks to output file
         for flight_to_copy in flights_list:
@@ -230,11 +230,16 @@ def gen_blocks(file, first_block, num_blocks):
         if count > (num_blocks * 512):
             raise ParsingException(f"Read block of length {block_length} would read {count} bytes "
                                    f"from {num_blocks * 512} byte flight")
+        try:
+            block = header + file.read(block_length - 4)
 
-        block = header + file.read(block_length - 4)
+            yield SDBlock.from_bytes(block), block
+        except ValueError:
+            print("READ LENGTH MUST BE NON-NEG OR -1", header, block_length, block_length - 4)
+            return
         # print(block.hex().upper())
         #        print(SDBlock.from_bytes(block))
-        yield SDBlock.from_bytes(block), block
+
 
 
 def parse_flight(file, imagedir: Path, part_offset, flight_num, flight):
@@ -269,6 +274,7 @@ def parse_flight(file, imagedir: Path, part_offset, flight_num, flight):
 
         cls = type(block)
         if cls == TelemetryDataBlock:
+            #print(num_blocks, block)
             cls = type(block.data)
 
             if first_time is None:

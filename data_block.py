@@ -62,7 +62,7 @@ class DataBlock(ABC):
             case DataBlockSubtype.ANGULAR_VELOCITY:
                 return AngularVelocityDataBlock.from_payload(payload)
 
-        raise DataBlockUnknownException(f"Unknown data block subtype: {block_subtype}")
+        raise DataBlockUnknownException(f"Unknown data block subtype: {block_subtype} {payload} {payload.hex()}")
 
     def __str__(self):
         return ""

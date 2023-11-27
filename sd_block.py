@@ -45,7 +45,7 @@ class SDBlock(ABC):
         payload = self._payload_bytes()
 
         block_class_type = (self.block_class & 0x3f) | ((self.block_type & 0x3ff) << 6)
-        head = struct.pack("<HH", block_class_type, len(self._payload_bytes) + 4)
+        head = struct.pack("<HH", block_class_type, self.length() + 4)
 
         return head + payload
 
@@ -177,8 +177,9 @@ class TelemetryDataBlock(SDBlock):
 
     @classmethod
     def _parse(cls, block_type, length, payload):
+        #print(block_type, length, payload.hex())
         data = DataBlock.parse(block_type, payload)
-        #print(data.length,data.subtype,data)
+
         #print(data)
         #return TelemetryDataBlock(data), block_type, data.subtype, payload
         return TelemetryDataBlock(data)

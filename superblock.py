@@ -92,7 +92,7 @@ class SuperBlock:
         return block
 
     def output(self, output_dd_cmd: bool = False):
-        print(f"Logging Version: {self.version}")
+        print(f"Superblock Version: {self.version}")
         print(f"First flight continued from previous partition: {'yes' if self.continued else 'no'}")
         print(f"Partition length: {self.partition_length}")
         print()
